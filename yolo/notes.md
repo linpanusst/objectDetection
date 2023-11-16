@@ -108,4 +108,80 @@ $$
 1. 舍弃dropout，卷积后全部加入Batch Normalization
 2. 网络的每一层的输入都做归一化，收敛更加容易  
 3. 经过BN的网络会有2%的提升
-4. 使用了更大的分辨率
+4. 使用了更大的分辨率，map提升了4个百分点
+5. 网络机构：DarkNet, 没有FC层，5次降采样，1*1卷积（全连接层容易过拟合，全连接层训练较慢）
+6. Darknet实际输入是416*416（为了让416/32=奇数），所有卷积核比较小，使得感受野比较大， 1 * 1的卷积比较省参数
+### 4.2.2 先验框
+faster-rcnn有 3* 3=9种先验框，但是比例是1：1， 1：2， 1:3  
+yolov2 __聚类提取先验框__ $d(box, centroids)=1-IOU(box, centroids)$, 生成的先验框和真实的框更接近，k=5.  
+此处的距离公式，如果用欧式距离，大的框产生的差异情况比较大，小的框产生差异比较小，可能算出来的值与框的大小相关，这是我们不想看到的。 所以此处使用的距离为 1-IOU。  
+<p align="center">
+  <img src="./pics/聚类先验框.png" alt="Image Description" width="60%"/>
+</p>
+
+当k值继续增大后，对网络模型的性能提升是非常有限的，所以yovov2选择了5个先验框的超参数。  
+通过引入Anchor box， 使得预测的box更多，但是对map值提升不大，但是对recall的提升较多。  
+### 4.2.3 偏移量计算
+yolov2没有直接使用偏移量计算，而是选择相对 grid cell 的偏移量。
+<p align="center">
+  <img src="./pics/偏移量计算.png" alt="Image Description" width="60%"/>
+</p>
+
+计算公式如下：
+$$
+b_x = \sigma(t_x) + c_x \\
+b_y = \sigma(t_y) + c_y  \\
+b_w = p_we^{t_w} \\
+b_h = p_he^{t_h}
+$$
+其中 $\sigma()$ 函数将t_x, t_y控制在0到1的范围内，那么在进行偏移量计算时，锚框就不会偏移太多。对于b_w使用指数计算的原因是一开始我们对预测值计算使用对数操作。
+> 此处假设偏移出去了，代码是如何过滤掉偏移出去的候选框的？
+### 4.2.4 感受野
+当最后一层的感受野太大的时候，小目标可能丢失。
+<p align="center">
+  <img src="./pics/感受野.png" alt="Image Description" width="30%"/>
+</p>
+
+使用3个 3* 3的卷积感受野是 7 *7，与1个 7 * 7的卷积核的区别，主要是参数会更少。（可参考VGG的设计思路） 
+### 4.2.5 特征图融合 
+在yolov2做了一个特征的融合，将最后一个特征图与倒数第二个特征图进行融合。
+<p align="center">
+  <img src="./pics/特征融合.png" alt="Image Description" width="60%"/>
+</p>
+
+### 4.2.6 多尺度
+yolov2增加了多尺度的功能
+
+## 4.3 YOLO-V3
+### 4.3.1 改进
+1. 更改网络结构，更适合小目标检测
+2. 特征做的更加细致，融入多持续特征图信息预测不同规格物体
+3. 先验框更丰富（v1中2个框，v2中5个，v3中9个）
+4. Softmax改进，预测多标签任务
+### 4.3.2 多scale
+
+<p align="center">
+  <img src="./pics/多scale.png" alt="Image Description" width="80%"/>
+</p>   
+
+特征图 52： 小目标  
+特征图 26： 中目标  
+特征图 13： 大目标  
+设计3种不同的特征图，再选择3种不同的候选框  
+
+<p align="center">
+  <img src="./pics/V3特征图融合.png" alt="Image Description" width="60%"/>
+</p> 
+
+### 4.3.3 Darknet 53
+<p align="center">
+  <img src="./pics/Darknet53.png" alt="Image Description" width="100%"/>
+</p> 
+
+1. 没有池化层和全连接层
+2. 下采样通过 stride 为2实现
+3. 3种不同的scale，更多的先验框
+13 * 13 *3 *（80 + 4 +1） -> 先验框长 * 先验框宽 * 3个scale box * (80个类别 + 每个框 x,y,w,h + 背景)
+
+### 4.3.4 softmax改进
+物体检测任务中可能一个物体有多个标签
